@@ -17,4 +17,16 @@ def init_db():
     conn.close()
 
 # gleich beim Start des Backends aufrufen
-init_db()
+@app.route("/api/watt", methods=["GET"])
+def get_watt():
+    conn = sqlite3.connect("solar.db")
+    cursor = conn.cursor()
+    
+    # Nur Zeit und Watt abrufen, sortiert nach Zeit
+    cursor.execute("SELECT zeit, watt FROM messungen ORDER BY zeit ASC")
+    daten = cursor.fetchall()
+    conn.close()
+
+    # In JSON umwandeln
+    result = [{"zeit": z, "watt": w} for z, w in daten]
+    return jsonify(result)

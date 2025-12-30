@@ -16,6 +16,27 @@ CORS(app)
 DB_FILE = "solar.db"
 
 def init_db():
+
+    #------------------------------------------------------------------------------------------------------------
+def simulate_data():
+    import random
+    from datetime import datetime, timedelta
+    conn = sqlite3.connect("solar.db")
+    cursor = conn.cursor()
+    start = datetime.now() - timedelta(days=365)
+    for tag in range(365):
+        for stunde in range(24):
+            zeitpunkt = start + timedelta(days=tag, hours=stunde)
+            watt = random.randint(5, 100)
+            cursor.execute(
+                "INSERT INTO messungen (watt, zeit) VALUES (?, ?)",
+                (watt, zeitpunkt.isoformat())
+            )
+    conn.commit()
+    conn.close()
+
+simulate_data()
+ #------------------------------------------------------------------------------------------------------------
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
@@ -108,3 +129,4 @@ def watt_12monate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+

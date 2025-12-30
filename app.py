@@ -3,6 +3,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import sqlite3
 import os
+import random
 
 # -------------------------------
 # 1️⃣ Flask-Objekt erstellen
@@ -10,33 +11,12 @@ import os
 app = Flask(__name__)
 CORS(app)
 
+DB_FILE = "solar.db"
+
 # -------------------------------
 # 2️⃣ SQLite initialisieren
 # -------------------------------
-DB_FILE = "solar.db"
-
 def init_db():
-
-    #------------------------------------------------------------------------------------------------------------
-def simulate_data():
-    import random
-    from datetime import datetime, timedelta
-    conn = sqlite3.connect("solar.db")
-    cursor = conn.cursor()
-    start = datetime.now() - timedelta(days=365)
-    for tag in range(365):
-        for stunde in range(24):
-            zeitpunkt = start + timedelta(days=tag, hours=stunde)
-            watt = random.randint(5, 100)
-            cursor.execute(
-                "INSERT INTO messungen (watt, zeit) VALUES (?, ?)",
-                (watt, zeitpunkt.isoformat())
-            )
-    conn.commit()
-    conn.close()
-
-simulate_data()
- #------------------------------------------------------------------------------------------------------------
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
@@ -52,7 +32,27 @@ simulate_data()
 init_db()
 
 # -------------------------------
-# Hilfsfunktion: Alte Daten löschen (>365 Tage)
+# 2b️⃣ Testdaten simulieren (nur einmal)
+# -------------------------------
+def simulate_data():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    start = datetime.now() - timedelta(days=365)
+    for tag in range(365):
+        for stunde in range(24):
+            zeitpunkt = start + timedelta(days=tag, hours=stunde)
+            watt = random.randint(5, 100)
+            cursor.execute(
+                "INSERT INTO messungen (watt, zeit) VALUES (?, ?)",
+                (watt, zeitpunkt.isoformat())
+            )
+    conn.commit()
+    conn.close()
+
+# simulate_data()  # nur einmal ausführen, dann wieder auskommentieren!
+
+# -------------------------------
+# 2c️⃣ Alte Daten automatisch löschen (>365 Tage)
 # -------------------------------
 def cleanup_old_data():
     conn = sqlite3.connect(DB_FILE)
@@ -81,7 +81,6 @@ def receive_watt():
     conn.commit()
     conn.close()
 
-    # Alte Daten automatisch löschen
     cleanup_old_data()
 
     return jsonify({"status": "ok"}), 200
@@ -94,7 +93,6 @@ def get_watt_data(days=None):
     cursor = conn.cursor()
 
     if days is None:
-        # Alle Daten
         cursor.execute("SELECT zeit, watt FROM messungen ORDER BY zeit ASC")
     else:
         start_time = datetime.now() - timedelta(days=days)
@@ -129,4 +127,3 @@ def watt_12monate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-

@@ -44,8 +44,18 @@ def simulate_data():
     conn.commit()
     conn.close()
 
+
 init_db()
-simulate_data()
+
+# nur simulieren, wenn DB leer ist
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+cursor.execute("SELECT COUNT(*) FROM messungen")
+anzahl = cursor.fetchone()[0]
+conn.close()
+
+if anzahl == 0:
+    simulate_data()
 
 # -------------------------------
 # Hilfsfunktion: Alte Daten löschen (>365 Tage)
@@ -123,3 +133,4 @@ def watt_12monate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+

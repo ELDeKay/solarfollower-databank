@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from datetime import datetime
+from datetime import datetime, timedelta
 import sqlite3
 import os
 
@@ -13,8 +13,10 @@ CORS(app)
 # -------------------------------
 # 2️⃣ SQLite initialisieren
 # -------------------------------
+DB_FILE = "solar.db"
+
 def init_db():
-    conn = sqlite3.connect("solar.db")
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS messungen (
@@ -29,19 +31,18 @@ def init_db():
 init_db()
 
 # -------------------------------
-# 3️⃣ GET-Endpunkt Watt
+# Hilfsfunktion: Alte Daten löschen (>365 Tage)
 # -------------------------------
-@app.route("/api/watt", methods=["GET"])
-def get_watt():
-    conn = sqlite3.connect("solar.db")
+def cleanup_old_data():
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT zeit, watt FROM messungen ORDER BY zeit ASC")
-    daten = cursor.fetchall()
+    ein_jahr_ago = datetime.now() - timedelta(days=365)
+    cursor.execute("DELETE FROM messungen WHERE zeit < ?", (ein_jahr_ago.isoformat(),))
+    conn.commit()
     conn.close()
-    return jsonify([{"zeit": z, "watt": w} for z, w in daten])
 
 # -------------------------------
-# 4️⃣ POST-Endpunkt für Pico-Daten
+# 3️⃣ POST-Endpunkt für Pico-Daten
 # -------------------------------
 @app.route("/api/watt", methods=["POST"])
 def receive_watt():
@@ -49,7 +50,8 @@ def receive_watt():
     watt = data.get("watt")
     if watt is None:
         return jsonify({"error": "watt fehlt"}), 400
-    conn = sqlite3.connect("solar.db")
+
+    conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
         "INSERT INTO messungen (watt, zeit) VALUES (?, ?)",
@@ -57,7 +59,48 @@ def receive_watt():
     )
     conn.commit()
     conn.close()
+
+    # Alte Daten automatisch löschen
+    cleanup_old_data()
+
     return jsonify({"status": "ok"}), 200
+
+# -------------------------------
+# 4️⃣ GET-Endpunkte nach Zeitraum
+# -------------------------------
+def get_watt_data(days=None):
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    if days is None:
+        # Alle Daten
+        cursor.execute("SELECT zeit, watt FROM messungen ORDER BY zeit ASC")
+    else:
+        start_time = datetime.now() - timedelta(days=days)
+        cursor.execute(
+            "SELECT zeit, watt FROM messungen WHERE zeit >= ? ORDER BY zeit ASC",
+            (start_time.isoformat(),)
+        )
+
+    daten = cursor.fetchall()
+    conn.close()
+    return [{"zeit": z, "watt": w} for z, w in daten]
+
+@app.route("/api/watt_24h", methods=["GET"])
+def watt_24h():
+    return jsonify(get_watt_data(1))
+
+@app.route("/api/watt_7d", methods=["GET"])
+def watt_7d():
+    return jsonify(get_watt_data(7))
+
+@app.route("/api/watt_30d", methods=["GET"])
+def watt_30d():
+    return jsonify(get_watt_data(30))
+
+@app.route("/api/watt_12monate", methods=["GET"])
+def watt_12monate():
+    return jsonify(get_watt_data(365))
 
 # -------------------------------
 # 5️⃣ Server starten

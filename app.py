@@ -11,11 +11,11 @@ import random
 app = Flask(__name__)
 CORS(app)
 
-DB_FILE = "solar.db"
-
 # -------------------------------
 # 2️⃣ SQLite initialisieren
 # -------------------------------
+DB_FILE = "solar.db"
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -29,11 +29,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-init_db()
-
-# -------------------------------
-# 2b️⃣ Testdaten simulieren (nur einmal)
-# -------------------------------
 def simulate_data():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -49,10 +44,11 @@ def simulate_data():
     conn.commit()
     conn.close()
 
-# simulate_data()  # nur einmal ausführen, dann wieder auskommentieren!
+init_db()
+simulate_data()
 
 # -------------------------------
-# 2c️⃣ Alte Daten automatisch löschen (>365 Tage)
+# Hilfsfunktion: Alte Daten löschen (>365 Tage)
 # -------------------------------
 def cleanup_old_data():
     conn = sqlite3.connect(DB_FILE)

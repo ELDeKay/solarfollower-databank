@@ -35,7 +35,7 @@ def simulate_data():
     
     for d in range(365):
         # Simuliere Lücke: 20% der Tage fehlen komplett
-        if random.random() < 0.2:
+        if random.random() < 0.8:
             continue  # diesen Tag überspringen
 
         for h in range(24):
@@ -151,6 +151,7 @@ def query_monthly_half(start):
 # -----------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

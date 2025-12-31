@@ -86,8 +86,14 @@ def query_raw(start):
     return [{"zeit": z, "watt": w} for z, w in rows]
 
 def query_daily(start):
+    """
+    Liefert für jeden Tag ab 'start' einen Wert zurück.
+    Falls keine Messung existiert, wird 'watt': None gesetzt,
+    damit Chart.js eine Lücke zeigt.
+    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+    # Hol alle vorhandenen Daten
     c.execute("""
         SELECT DATE(zeit) as tag, AVG(watt)
         FROM messungen
@@ -97,7 +103,15 @@ def query_daily(start):
     """, (start.isoformat(),))
     rows = c.fetchall()
     conn.close()
-    return [{"zeit": t, "watt": round(w, 2)} for t, w in rows]
+
+    # Alle Tage im Zeitraum
+    total_days = [(start + timedelta(days=i)).date() for i in range((datetime.now().date() - start.date()).days + 1)]
+    data_dict = {datetime.strptime(tag, "%Y-%m-%d").date(): round(avg, 2) for tag, avg in rows}
+
+    # Fehlende Tage auf None setzen
+    result = [{"zeit": d.isoformat(), "watt": data_dict.get(d, None)} for d in total_days]
+    return result
+
 
 def query_monthly_half(start):
     """
@@ -127,3 +141,4 @@ def query_monthly_half(start):
 # -----------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+

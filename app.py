@@ -24,11 +24,20 @@ def init_db():
     conn.commit()
     conn.close()
 
-def simulate_data():
+def simulate_data_with_gaps():
+    """
+    Simuliert Messungen für 1 Jahr, aber mit zufälligen Lücken von einigen Tagen,
+    damit im Graphen fehlende Daten sichtbar werden.
+    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     start = datetime.now() - timedelta(days=365)
+    
     for d in range(365):
+        # Simuliere Lücke: 20% der Tage fehlen komplett
+        if random.random() < 0.2:
+            continue  # diesen Tag überspringen
+
         for h in range(24):
             t = start + timedelta(days=d, hours=h)
             watt = random.randint(5, 100)
@@ -36,6 +45,7 @@ def simulate_data():
                 "INSERT INTO messungen (watt, zeit) VALUES (?, ?)",
                 (watt, t.isoformat())
             )
+
     conn.commit()
     conn.close()
 
@@ -141,4 +151,5 @@ def query_monthly_half(start):
 # -----------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 

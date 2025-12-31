@@ -24,7 +24,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-def simulate_data_with_gaps():
+def simulate_data():
     """
     Simuliert Messungen für 1 Jahr, aber mit zufälligen Lücken von einigen Tagen,
     damit im Graphen fehlende Daten sichtbar werden.
@@ -151,5 +151,6 @@ def query_monthly_half(start):
 # -----------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 

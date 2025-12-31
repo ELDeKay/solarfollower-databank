@@ -69,7 +69,7 @@ def watt_30d():
 @app.route("/api/watt_12monate")
 def watt_12monate():
     start = datetime.now() - timedelta(days=365)
-    return jsonify(query_monthly(start))
+    return jsonify(query_monthly_half(start))
 
 # -----------------------
 # Query-Funktionen
@@ -99,19 +99,30 @@ def query_daily(start):
     conn.close()
     return [{"zeit": t, "watt": round(w, 2)} for t, w in rows]
 
-def query_monthly(start):
+def query_monthly_half(start):
+    """
+    Gibt für jeden Monat zwei Werte zurück: 
+    1.-15. des Monats und 16.-Ende des Monats
+    """
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("""
-        SELECT strftime('%Y-%m', zeit) as monat, AVG(watt)
+        SELECT strftime('%Y-%m', zeit) as monat,
+               CASE WHEN CAST(strftime('%d', zeit) AS INTEGER) <= 15 THEN 1 ELSE 2 END as halbmonat,
+               AVG(watt)
         FROM messungen
         WHERE zeit >= ?
-        GROUP BY monat
-        ORDER BY monat
+        GROUP BY monat, halbmonat
+        ORDER BY monat, halbmonat
     """, (start.isoformat(),))
     rows = c.fetchall()
     conn.close()
-    return [{"zeit": m, "watt": round(w, 2)} for m, w in rows]
+
+    # Erzeuge ein einheitliches Format für die Zeitangabe
+    return [
+        {"zeit": f"{monat}-{halbmonat}", "watt": round(avg_watt, 2)}
+        for monat, halbmonat, avg_watt in rows
+    ]
 
 # -----------------------
 if __name__ == "__main__":

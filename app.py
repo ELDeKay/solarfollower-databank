@@ -42,7 +42,6 @@ def simulate_data():
     start = datetime.now() - timedelta(days=365)
 
     for d in range(365):
-        # 20 % komplette Tageslücken
         if random.random() < 0.2:
             continue
 
@@ -59,7 +58,7 @@ def simulate_data():
 
 init_db()
 
-# ⚠️ Simulation nur ausführen, wenn DB leer ist
+# ⚠️ Simulation nur wenn DB leer ist
 conn = get_db()
 c = conn.cursor()
 c.execute("SELECT COUNT(*) FROM messungen")
@@ -68,7 +67,31 @@ if c.fetchone()[0] == 0:
 conn.close()
 
 # =======================
-# API Endpunkte
+# 🔥 NEU: Pico → DB
+# =======================
+@app.route("/api/pico", methods=["POST"])
+def pico_data():
+    data = request.get_json()
+
+    if not data or "watt" not in data:
+        return jsonify({"error": "watt fehlt"}), 400
+
+    watt = float(data["watt"])
+    zeit = datetime.now()
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
+        (watt, zeit)
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"status": "ok"}), 201
+
+# =======================
+# API Endpunkte (GET)
 # =======================
 @app.route("/api/watt_24h")
 def watt_24h():
@@ -105,12 +128,7 @@ def query_raw(start):
 
     return [{"zeit": z.isoformat(), "watt": w} for z, w in rows]
 
-
 def query_daily(start):
-    """
-    Gibt jeden Tag zurück.
-    Fehlende Tage -> watt = None (Chart.js zeigt Lücke)
-    """
     conn = get_db()
     c = conn.cursor()
     c.execute("""
@@ -135,13 +153,7 @@ def query_daily(start):
         for d in total_days
     ]
 
-
 def query_monthly_half(start):
-    """
-    Pro Monat:
-    - 1.–15.
-    - 16.–Monatsende
-    """
     conn = get_db()
     c = conn.cursor()
     c.execute("""

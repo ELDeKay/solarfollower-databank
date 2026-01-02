@@ -1,7 +1,8 @@
 flask
 flask-cors
 gunicorn
-psycopg[binary]==3.2.2
+psycopg[binary]
+
 
 
 

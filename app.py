@@ -22,13 +22,17 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS messungen (
-            id SERIAL PRIMARY KEY,
-            watt REAL,
-            zeit TIMESTAMP
+    c.execute
+        (
+            """
+                CREATE TABLE IF NOT EXISTS messungen 
+                    (
+                        id SERIAL PRIMARY KEY,
+                        watt REAL,
+                        zeit TIMESTAMP
+                    )
+            """
         )
-    """)
     conn.commit()
     conn.close()
 
@@ -48,10 +52,11 @@ def simulate_data():
         for h in range(24):
             t = start + timedelta(days=d, hours=h)
             watt = random.randint(5, 100)
-            c.execute(
-                "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
-                (watt, t)
-            )
+            c.execute
+                (
+                    "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
+                    (watt, t)
+                )
 
     conn.commit()
     conn.close()
@@ -61,7 +66,11 @@ init_db()
 # ⚠️ Simulation nur wenn DB leer ist
 conn = get_db()
 c = conn.cursor()
-c.execute("SELECT COUNT(*) FROM messungen")
+c.execute
+    (
+        "SELECT COUNT(*) FROM messungen"
+    )
+
 if c.fetchone()[0] == 0:
     simulate_data()
 conn.close()
@@ -81,10 +90,11 @@ def pico_data():
 
     conn = get_db()
     c = conn.cursor()
-    c.execute(
-        "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
-        (watt, zeit)
-    )
+    c.execute
+        (
+            "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
+            (watt, zeit)
+        )
     conn.commit()
     conn.close()
 
@@ -119,10 +129,11 @@ def watt_12monate():
 def query_raw(start):
     conn = get_db()
     c = conn.cursor()
-    c.execute(
-        "SELECT zeit, watt FROM messungen WHERE zeit >= %s ORDER BY zeit",
-        (start,)
-    )
+    c.execute
+        (
+            "SELECT zeit, watt FROM messungen WHERE zeit >= %s ORDER BY zeit",
+            (start,)
+        )
     rows = c.fetchall()
     conn.close()
 
@@ -131,56 +142,66 @@ def query_raw(start):
 def query_daily(start):
     conn = get_db()
     c = conn.cursor()
-    c.execute("""
-        SELECT DATE(zeit) AS tag, AVG(watt)
-        FROM messungen
-        WHERE zeit >= %s
-        GROUP BY tag
-        ORDER BY tag
-    """, (start,))
+    c.execute
+        (
+            """
+                SELECT DATE(zeit) AS tag, AVG(watt)
+                FROM messungen
+                WHERE zeit >= %s
+                GROUP BY tag
+                ORDER BY tag
+            """, (start,)
+        )
     rows = c.fetchall()
     conn.close()
 
     data = {tag: round(avg, 2) for tag, avg in rows}
 
-    total_days = [
-        (start + timedelta(days=i)).date()
-        for i in range((datetime.now().date() - start.date()).days + 1)
-    ]
+    total_days = 
+        [
+            (start + timedelta(days=i)).date()
+            for i in range((datetime.now().date() - start.date()).days + 1)
+        ]
 
-    return [
-        {"zeit": d.isoformat(), "watt": data.get(d, None)}
-        for d in total_days
-    ]
+    return 
+        [
+            {"zeit": d.isoformat(), "watt": data.get(d, None)}
+            for d in total_days
+        ]
 
 def query_monthly_half(start):
     conn = get_db()
     c = conn.cursor()
-    c.execute("""
-        SELECT
-            to_char(zeit, 'YYYY-MM') AS monat,
-            CASE
-                WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
+    c.execute
+        (
+            """
+                SELECT
+                    to_char(zeit, 'YYYY-MM') AS monat,
+                CASE
+                    WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
                 ELSE 2
-            END AS halbmonat,
-            AVG(watt)
-        FROM messungen
-        WHERE zeit >= %s
-        GROUP BY monat, halbmonat
-        ORDER BY monat, halbmonat
-    """, (start,))
+                END AS halbmonat,
+                AVG(watt)
+                FROM messungen
+                WHERE zeit >= %s
+                GROUP BY monat, halbmonat
+                ORDER BY monat, halbmonat
+            """, (start,)
+        )
     rows = c.fetchall()
     conn.close()
 
-    return [
-        {"zeit": f"{monat}-{halbmonat}", "watt": round(avg, 2)}
-        for monat, halbmonat, avg in rows
-    ]
+    return 
+        [
+            {"zeit": f"{monat}-{halbmonat}", "watt": round(avg, 2)}
+            for monat, halbmonat, avg in rows
+        ]
 
 # =======================
 # Start
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 

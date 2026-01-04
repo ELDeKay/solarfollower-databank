@@ -166,18 +166,18 @@ def query_monthly_half(start):
     conn = get_db()
     c = conn.cursor()
     c.execute(
-            """
-                SELECT
-                    to_char(zeit, 'YYYY-MM') AS monat,
-                CASE
-                    WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
+        """
+        SELECT
+            to_char(zeit, 'YYYY-MM') AS monat,
+            CASE
+                WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
                 ELSE 2
-                END AS halbmonat,
-                AVG(watt)
-                FROM messungen
-                WHERE zeit >= %s
-                GROUP BY monat, halbmonat
-                ORDER BY monat, halbmonat
+            END AS halbmonat,
+            AVG(watt)
+            FROM messungen
+            WHERE zeit >= %s
+            GROUP BY monat, halbmonat
+            ORDER BY monat, halbmonat
             """, (start,)
     )
     rows = c.fetchall()
@@ -194,6 +194,7 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

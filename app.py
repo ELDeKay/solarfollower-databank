@@ -151,11 +151,10 @@ def query_daily(start):
 
     data = {tag: round(avg, 2) for tag, avg in rows}
 
-    total_days = 
-        [
+    total_days = [
             (start + timedelta(days=i)).date()
             for i in range((datetime.now().date() - start.date()).days + 1)
-        ]
+    ]
 
     return 
         [
@@ -195,6 +194,7 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

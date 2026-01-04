@@ -51,11 +51,10 @@ def simulate_data():
         for h in range(24):
             t = start + timedelta(days=d, hours=h)
             watt = random.randint(5, 100)
-            c.execute
-                (
+            c.execute(
                     "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
                     (watt, t)
-                )
+            )
 
     conn.commit()
     conn.close()
@@ -196,6 +195,7 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

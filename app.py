@@ -156,11 +156,10 @@ def query_daily(start):
             for i in range((datetime.now().date() - start.date()).days + 1)
     ]
 
-    return 
-        [
+    return [
             {"zeit": d.isoformat(), "watt": data.get(d, None)}
             for d in total_days
-        ]
+    ]
 
 def query_monthly_half(start):
     conn = get_db()
@@ -183,7 +182,7 @@ def query_monthly_half(start):
     rows = c.fetchall()
     conn.close()
 
-    return[
+    return [
             {"zeit": f"{monat}-{halbmonat}", "watt": round(avg, 2)}
             for monat, halbmonat, avg in rows
     ]
@@ -193,6 +192,7 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

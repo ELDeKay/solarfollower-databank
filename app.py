@@ -183,17 +183,17 @@ def query_monthly_half(start):
     rows = c.fetchall()
     conn.close()
 
-    return 
-        [
+    return[
             {"zeit": f"{monat}-{halbmonat}", "watt": round(avg, 2)}
             for monat, halbmonat, avg in rows
-        ]
+    ]
 
 # =======================
 # Start
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

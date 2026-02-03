@@ -87,26 +87,22 @@ def pico_data():
     except (ValueError, TypeError):
         return jsonify({"error": "ungültiger watt-Wert"}), 400
 
-    # 🔥 FILTER: alles unter 10 Watt ignorieren
-    if watt < 10.0:
-        return jsonify({
-            "status": "ignored",
-            "reason": "watt < 10"
-        }), 200
+    # ✅ Alles unter 5W nicht speichern
+    if watt < 5.0:
+        return jsonify({"status": "ignored", "reason": "watt < 10"}), 200
 
     zeit = datetime.now()
 
     conn = get_db()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
-        (watt, zeit)
+            "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
+            (watt, zeit)
     )
     conn.commit()
     conn.close()
 
     return jsonify({"status": "ok"}), 201
-
 
 # =======================
 # API Endpunkte (GET)
@@ -134,24 +130,43 @@ def watt_12monate():
 # =======================
 # Query-Funktionen
 # =======================
+
+# 24h: statt Rohdaten -> Summen pro Stunde
 def query_raw(start):
     conn = get_db()
     c = conn.cursor()
     c.execute(
-            "SELECT zeit, watt FROM messungen WHERE zeit >= %s ORDER BY zeit",
-            (start,)
+        """
+        SELECT date_trunc('hour', zeit) AS stunde, SUM(watt)
+        FROM messungen
+        WHERE zeit >= %s
+        GROUP BY stunde
+        ORDER BY stunde
+        """,
+        (start,)
     )
     rows = c.fetchall()
     conn.close()
 
-    return [{"zeit": z.isoformat(), "watt": w} for z, w in rows]
+    data = {stunde: round(float(s), 2) for stunde, s in rows}
 
+    total_hours = [
+        (start.replace(minute=0, second=0, microsecond=0) + timedelta(hours=i))
+        for i in range(int((datetime.now() - start).total_seconds() // 3600) + 1)
+    ]
+
+    return [
+        {"zeit": h.isoformat(), "watt": data.get(h, None)}
+        for h in total_hours
+    ]
+
+# 7d/30d: statt AVG -> SUM pro Tag
 def query_daily(start):
     conn = get_db()
     c = conn.cursor()
     c.execute(
             """
-                SELECT DATE(zeit) AS tag, AVG(watt)
+                SELECT DATE(zeit) AS tag, SUM(watt)
                 FROM messungen
                 WHERE zeit >= %s
                 GROUP BY tag
@@ -161,7 +176,7 @@ def query_daily(start):
     rows = c.fetchall()
     conn.close()
 
-    data = {tag: round(avg, 2) for tag, avg in rows}
+    data = {tag: round(float(s), 2) for tag, s in rows}
 
     total_days = [
             (start + timedelta(days=i)).date()
@@ -173,6 +188,7 @@ def query_daily(start):
             for d in total_days
     ]
 
+# 12 Monate: statt AVG -> SUM pro Halbmonat
 def query_monthly_half(start):
     conn = get_db()
     c = conn.cursor()
@@ -184,7 +200,7 @@ def query_monthly_half(start):
                 WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
                 ELSE 2
             END AS halbmonat,
-            AVG(watt)
+            SUM(watt)
             FROM messungen
             WHERE zeit >= %s
             GROUP BY monat, halbmonat
@@ -195,8 +211,8 @@ def query_monthly_half(start):
     conn.close()
 
     return [
-            {"zeit": f"{monat}-{halbmonat}", "watt": round(avg, 2)}
-            for monat, halbmonat, avg in rows
+            {"zeit": f"{monat}-{halbmonat}", "watt": round(float(s), 2)}
+            for monat, halbmonat, s in rows
     ]
 
 # =======================
@@ -204,13 +220,3 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-
-
-
-
-
-
-
-
-

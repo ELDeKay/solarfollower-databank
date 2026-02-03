@@ -16,7 +16,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
-# Konstante: Pico sendet alle 5 Sekunden (laut deiner Vorgabe)
+# Pico sendet alle 5 Sekunden
 PICO_INTERVAL_SECONDS = 5.0
 
 # -----------------------
@@ -26,7 +26,6 @@ def init_db():
     conn = get_db()
     c = conn.cursor()
 
-    # Tabelle wie gehabt, aber zusätzlich kwh-Spalte
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS messungen
@@ -38,25 +37,21 @@ def init_db():
         """
     )
 
-    # Neue Spalte für Energie/Ertrag (kWh)
+    # neue Spalte für Energie (kWh)
     c.execute("ALTER TABLE messungen ADD COLUMN IF NOT EXISTS kwh REAL")
 
     conn.commit()
     conn.close()
 
 # -----------------------
-# (OPTIONAL) Simulation
-# NUR lokal verwenden!
+# Simulation (optional)
 # -----------------------
 def simulate_data():
     """
-    Simulation bleibt drin.
-
-    Wichtig:
-    - Simulation erzeugt (wie vorher) 1 Wert pro Stunde.
-    - 'watt' bleibt Rohleistung (W).
-    - 'kwh' ist dann der Ertrag dieser Stunde: kWh = watt * 1h / 1000.
-    - Werte < 10W werden (wie im Live-Betrieb) nicht gespeichert.
+    - 1 Wert pro Stunde
+    - watt = Rohleistung
+    - kwh = watt * 1h / 1000
+    - <10W wird ignoriert
     """
     conn = get_db()
     c = conn.cursor()
@@ -70,12 +65,10 @@ def simulate_data():
             t = start + timedelta(days=d, hours=h)
             watt = random.randint(5, 100)
 
-            # wie Live: <10W ignorieren
             if watt < 10:
                 continue
 
-            # 1 Wert pro Stunde => Energie dieser Stunde
-            kwh = float(watt) * 1.0 / 1000.0
+            kwh = float(watt) / 1000.0
 
             c.execute(
                 "INSERT INTO messungen (watt, kwh, zeit) VALUES (%s, %s, %s)",
@@ -87,7 +80,7 @@ def simulate_data():
 
 init_db()
 
-# ⚠️ Simulation nur wenn DB leer ist
+# Simulation nur bei leerer DB
 conn = get_db()
 c = conn.cursor()
 c.execute("SELECT COUNT(*) FROM messungen")
@@ -96,7 +89,7 @@ if c.fetchone()[0] == 0:
 conn.close()
 
 # =======================
-# 🔥 Pico → DB
+# Pico → DB
 # =======================
 @app.route("/api/pico", methods=["POST"])
 def pico_data():
@@ -106,18 +99,15 @@ def pico_data():
         return jsonify({"error": "watt fehlt"}), 400
 
     try:
-        watt = float(data["watt"])  # ✅ Rohleistung in Watt (wie vorher)
+        watt = float(data["watt"])
     except (ValueError, TypeError):
         return jsonify({"error": "ungültiger watt-Wert"}), 400
 
-    # ✅ Alles unter 10W nicht speichern
     if watt < 10.0:
         return jsonify({"status": "ignored", "reason": "watt < 10"}), 200
 
-    # ✅ kWh pro Sample (5 Sekunden)
-    # kWh = W * (Sekunden/3600) / 1000
+    # kWh pro 5 Sekunden
     kwh = watt * (PICO_INTERVAL_SECONDS / 3600.0) / 1000.0
-
     zeit = datetime.now()
 
     conn = get_db()
@@ -132,7 +122,7 @@ def pico_data():
     return jsonify({"status": "ok"}), 201
 
 # =======================
-# ✅ NEU: letzter Watt-Wert (für "aktuelle Leistung")
+# Aktueller Watt-Wert
 # =======================
 @app.route("/api/watt_now")
 def watt_now():
@@ -143,10 +133,10 @@ def watt_now():
     conn.close()
 
     if not row:
-        return jsonify({"zeit": None, "watt": None}), 200
+        return jsonify({"zeit": None, "watt": None})
 
     z, w = row
-    return jsonify({"zeit": z.isoformat(), "watt": float(w)}), 200
+    return jsonify({"zeit": z.isoformat(), "watt": float(w)})
 
 # =======================
 # API Endpunkte (GET)
@@ -174,12 +164,7 @@ def watt_12monate():
 # =======================
 # Query-Funktionen
 # =======================
-
 def query_raw(start):
-    """
-    24h: bleibt erstmal bei Roh-Wattwerten, damit du am Frontend noch nichts umstellen musst.
-    Gibt (zeit, watt) als Rohreihe zurück.
-    """
     conn = get_db()
     c = conn.cursor()
     c.execute(
@@ -192,21 +177,17 @@ def query_raw(start):
     return [{"zeit": z.isoformat(), "watt": float(w)} for z, w in rows]
 
 def query_daily(start):
-    """
-    7d/30d: Ertrag pro Tag summieren.
-    Wir summieren die kwh-Spalte, geben aber fürs Frontend weiterhin den Key 'watt' zurück,
-    damit du die Website erst später umstellen musst.
-    """
     conn = get_db()
     c = conn.cursor()
     c.execute(
         """
-            SELECT DATE(zeit) AS tag, SUM(kwh)
-            FROM messungen
-            WHERE zeit >= %s
-            GROUP BY tag
-            ORDER BY tag
-        """, (start,)
+        SELECT DATE(zeit) AS tag, COALESCE(SUM(kwh), 0)
+        FROM messungen
+        WHERE zeit >= %s
+        GROUP BY tag
+        ORDER BY tag
+        """,
+        (start,)
     )
     rows = c.fetchall()
     conn.close()
@@ -218,13 +199,9 @@ def query_daily(start):
         for i in range((datetime.now().date() - start.date()).days + 1)
     ]
 
-    return [{"zeit": d.isoformat(), "watt": data.get(d, None)} for d in total_days]
+    return [{"zeit": d.isoformat(), "watt": data.get(d, 0.0)} for d in total_days]
 
 def query_monthly_half(start):
-    """
-    12 Monate: Ertrag pro Halbmonat summieren.
-    SUM(kwh) je (Monat, Halbmonat). Key bleibt 'watt' fürs Frontend.
-    """
     conn = get_db()
     c = conn.cursor()
     c.execute(
@@ -235,12 +212,13 @@ def query_monthly_half(start):
                 WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
                 ELSE 2
             END AS halbmonat,
-            SUM(kwh)
+            COALESCE(SUM(kwh), 0)
         FROM messungen
         WHERE zeit >= %s
         GROUP BY monat, halbmonat
         ORDER BY monat, halbmonat
-        """, (start,)
+        """,
+        (start,)
     )
     rows = c.fetchall()
     conn.close()

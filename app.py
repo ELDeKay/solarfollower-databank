@@ -46,37 +46,52 @@ def init_db():
 # -----------------------
 # Simulation (optional)
 # -----------------------
-def simulate_data():
+def simulate_until_now():
     """
-    - 1 Wert pro Stunde
-    - watt = Rohleistung
-    - kwh = watt * 1h / 1000
-    - <10W wird ignoriert
+    Füllt die Simulation bis zur aktuellen Zeit auf.
+    - nutzt stündliche Werte
+    - ignoriert <10W
+    - setzt kwh = watt / 1000 pro Stunde
     """
     conn = get_db()
     c = conn.cursor()
-    start = datetime.now() - timedelta(days=365)
 
-    for d in range(365):
-        if random.random() < 0.2:
-            continue
+    # neuester Zeitstempel in DB
+    c.execute("SELECT MAX(zeit) FROM messungen")
+    row = c.fetchone()
+    last = row[0] if row else None
 
-        for h in range(24):
-            t = start + timedelta(days=d, hours=h)
-            watt = random.randint(5, 100)
+    # wenn noch nichts drin ist: starte vor 365 Tagen
+    if last is None:
+        start = datetime.now() - timedelta(days=365)
+    else:
+        # nächste volle Stunde nach dem letzten Eintrag
+        start = last.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 
-            if watt < 10:
-                continue
+    now = datetime.now().replace(minute=0, second=0, microsecond=0)
 
-            kwh = float(watt) / 1000.0
+    # nichts zu tun?
+    if start > now:
+        conn.close()
+        return
 
+    t = start
+    while t <= now:
+        watt = random.randint(5, 100)
+        if watt >= 10:
+            kwh = float(watt) / 1000.0  # 1h
             c.execute(
                 "INSERT INTO messungen (watt, kwh, zeit) VALUES (%s, %s, %s)",
                 (float(watt), kwh, t)
             )
+        t += timedelta(hours=1)
 
     conn.commit()
     conn.close()
+
+
+# statt "nur bei leerer DB" -> IMMER auffüllen
+simulate_until_now()
 
 init_db()
 
@@ -233,3 +248,4 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+

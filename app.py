@@ -82,19 +82,31 @@ def pico_data():
     if not data or "watt" not in data:
         return jsonify({"error": "watt fehlt"}), 400
 
-    watt = float(data["watt"])
+    try:
+        watt = float(data["watt"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "ungültiger watt-Wert"}), 400
+
+    # 🔥 FILTER: alles unter 10 Watt ignorieren
+    if watt < 10.0:
+        return jsonify({
+            "status": "ignored",
+            "reason": "watt < 10"
+        }), 200
+
     zeit = datetime.now()
 
     conn = get_db()
     c = conn.cursor()
     c.execute(
-            "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
-            (watt, zeit)
+        "INSERT INTO messungen (watt, zeit) VALUES (%s, %s)",
+        (watt, zeit)
     )
     conn.commit()
     conn.close()
 
     return jsonify({"status": "ok"}), 201
+
 
 # =======================
 # API Endpunkte (GET)
@@ -192,6 +204,7 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
 
 
 

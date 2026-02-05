@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-import psylpsycopg2
+import psycopg2
 import os
 import random
 
@@ -12,6 +12,9 @@ CORS(app)
 # Datenbank (PostgreSQL)
 # =======================
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL fehlt in den Environment-Variablen")
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)

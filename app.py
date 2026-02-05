@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from datetime import datetime, timedelta
-import psycopg2
+import psylpsycopg2
 import os
 import random
 
@@ -89,19 +89,11 @@ def simulate_until_now():
     conn.commit()
     conn.close()
 
+# ✅ WICHTIG: erst DB anlegen, dann simulieren
+init_db()
 
 # statt "nur bei leerer DB" -> IMMER auffüllen
 simulate_until_now()
-
-init_db()
-
-# Simulation nur bei leerer DB
-conn = get_db()
-c = conn.cursor()
-c.execute("SELECT COUNT(*) FROM messungen")
-if c.fetchone()[0] == 0:
-    simulate_data()
-conn.close()
 
 # =======================
 # Pico → DB
@@ -159,7 +151,7 @@ def watt_now():
 @app.route("/api/watt_24h")
 def watt_24h():
     start = datetime.now() - timedelta(hours=24)
-    return jsonify(query_raw(start))
+    return jsonify(query_hourly_kwh(start))
 
 @app.route("/api/watt_7d")
 def watt_7d():
@@ -179,17 +171,43 @@ def watt_12monate():
 # =======================
 # Query-Funktionen
 # =======================
-def query_raw(start):
+
+def query_hourly_kwh(start):
+    """
+    24h: liefert kWh pro Stunde (SUM(kwh) je Stunde)
+    JSON-Key bleibt "watt" für Kompatibilität zur Website,
+    aber der Inhalt ist kWh.
+    """
     conn = get_db()
     c = conn.cursor()
     c.execute(
-        "SELECT zeit, watt FROM messungen WHERE zeit >= %s ORDER BY zeit",
+        """
+        SELECT DATE_TRUNC('hour', zeit) AS stunde, COALESCE(SUM(kwh), 0)
+        FROM messungen
+        WHERE zeit >= %s
+        GROUP BY stunde
+        ORDER BY stunde
+        """,
         (start,)
     )
     rows = c.fetchall()
     conn.close()
 
-    return [{"zeit": z.isoformat(), "watt": float(w)} for z, w in rows]
+    # Map: datetime(hour) -> kwh_sum
+    data = {stunde: round(float(s), 6) for stunde, s in rows}
+
+    # Vollständige Stunden-Liste (24h Fenster)
+    start_hour = start.replace(minute=0, second=0, microsecond=0)
+    now_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+
+    total_hours = []
+    t = start_hour
+    while t <= now_hour:
+        total_hours.append(t)
+        t += timedelta(hours=1)
+
+    return [{"zeit": h.isoformat(), "watt": data.get(h, 0.0)} for h in total_hours]
+
 
 def query_daily(start):
     conn = get_db()
@@ -215,6 +233,7 @@ def query_daily(start):
     ]
 
     return [{"zeit": d.isoformat(), "watt": data.get(d, 0.0)} for d in total_days]
+
 
 def query_monthly_half(start):
     conn = get_db()
@@ -248,5 +267,3 @@ def query_monthly_half(start):
 # =======================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-

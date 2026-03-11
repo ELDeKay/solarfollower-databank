@@ -40,6 +40,7 @@ FIXED_KWH_DATA = [
     ("06.03.2026", 2.62),
     ("07.03.2026", 3.09),
     ("08.03.2026", 2.99),
+    ("09.03.2026", 0.00),
 ]
 
 def init_db():
@@ -203,3 +204,4 @@ seed_fixed_data()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+

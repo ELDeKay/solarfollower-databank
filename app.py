@@ -7,9 +7,6 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# =======================
-# Datenbank (PostgreSQL)
-# =======================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 if not DATABASE_URL:
@@ -18,12 +15,8 @@ if not DATABASE_URL:
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
-# Pico sendet alle 5 Sekunden
 PICO_INTERVAL_SECONDS = 5.0
 
-# =======================
-# Feste Tagesdaten
-# =======================
 FIXED_KWH_DATA = [
     ("15.02.2026", 0.33),
     ("16.02.2026", 0.42),
@@ -49,9 +42,6 @@ FIXED_KWH_DATA = [
     ("08.03.2026", 2.99),
 ]
 
-# -----------------------
-# DB Initialisierung
-# -----------------------
 def init_db():
     conn = get_db()
     c = conn.cursor()
@@ -68,23 +58,17 @@ def init_db():
         """
     )
 
-    # Falls Tabelle schon existiert und kwh noch fehlt
     c.execute("ALTER TABLE messungen ADD COLUMN IF NOT EXISTS kwh REAL")
 
     conn.commit()
     conn.close()
 
-# -----------------------
-# Feste Daten einsetzen
-# -----------------------
 def seed_fixed_data():
     conn = get_db()
     c = conn.cursor()
 
-    # Alle bisherigen Zufallsdaten löschen
     c.execute("DELETE FROM messungen")
 
-    # Nur die Werte aus deiner Tabelle einfügen
     for date_str, kwh_value in FIXED_KWH_DATA:
         tag = datetime.strptime(date_str, "%d.%m.%Y")
         c.execute(
@@ -95,5 +79,127 @@ def seed_fixed_data():
     conn.commit()
     conn.close()
 
+def query_hourly_kwh(start):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT DATE_TRUNC('hour', zeit) AS stunde, COALESCE(SUM(kwh), 0)
+        FROM messungen
+        WHERE zeit >= %s
+        GROUP BY stunde
+        ORDER BY stunde
+        """,
+        (start,)
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    data = {stunde: round(float(s), 6) for stunde, s in rows}
+
+    start_hour = start.replace(minute=0, second=0, microsecond=0)
+    now_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
+
+    total_hours = []
+    t = start_hour
+    while t <= now_hour:
+        total_hours.append(t)
+        t += timedelta(hours=1)
+
+    return [{"zeit": h.isoformat(), "watt": data.get(h, 0.0)} for h in total_hours]
+
+def query_daily(start):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT DATE(zeit) AS tag, COALESCE(SUM(kwh), 0)
+        FROM messungen
+        WHERE zeit >= %s
+        GROUP BY tag
+        ORDER BY tag
+        """,
+        (start,)
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    data = {tag: round(float(s), 6) for tag, s in rows}
+
+    total_days = [
+        (start + timedelta(days=i)).date()
+        for i in range((datetime.now().date() - start.date()).days + 1)
+    ]
+
+    return [{"zeit": d.isoformat(), "watt": data.get(d, 0.0)} for d in total_days]
+
+def query_monthly_half(start):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT
+            to_char(zeit, 'YYYY-MM') AS monat,
+            CASE
+                WHEN EXTRACT(DAY FROM zeit) <= 15 THEN 1
+                ELSE 2
+            END AS halbmonat,
+            COALESCE(SUM(kwh), 0)
+        FROM messungen
+        WHERE zeit >= %s
+        GROUP BY monat, halbmonat
+        ORDER BY monat, halbmonat
+        """,
+        (start,)
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    return [
+        {"zeit": f"{monat}-{halbmonat}", "watt": round(float(s), 6)}
+        for monat, halbmonat, s in rows
+    ]
+
+@app.route("/")
+def home():
+    return "Backend läuft"
+
+@app.route("/api/watt_now")
+def watt_now():
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT zeit, kwh FROM messungen ORDER BY zeit DESC LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+
+    if not row:
+        return jsonify({"zeit": None, "watt": None})
+
+    z, k = row
+    return jsonify({"zeit": z.isoformat(), "watt": float(k)})
+
+@app.route("/api/watt_24h")
+def watt_24h():
+    start = datetime.now() - timedelta(hours=24)
+    return jsonify(query_hourly_kwh(start))
+
+@app.route("/api/watt_7d")
+def watt_7d():
+    start = datetime.now() - timedelta(days=7)
+    return jsonify(query_daily(start))
+
+@app.route("/api/watt_30d")
+def watt_30d():
+    start = datetime.now() - timedelta(days=30)
+    return jsonify(query_daily(start))
+
+@app.route("/api/watt_12monate")
+def watt_12monate():
+    start = datetime.now() - timedelta(days=365)
+    return jsonify(query_monthly_half(start))
+
 init_db()
 seed_fixed_data()
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

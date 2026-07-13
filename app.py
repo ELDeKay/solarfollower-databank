@@ -7,6 +7,7 @@ import os
 
 app = Flask(__name__)
 
+
 # =========================================================
 # CORS
 # =========================================================
@@ -21,7 +22,7 @@ CORS(app, resources={
 
 
 # =========================================================
-# PostgreSQL-Datenbank
+# PostgreSQL-Verbindung
 # =========================================================
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -33,66 +34,51 @@ if not DATABASE_URL:
 
 
 def get_db():
+    """Öffnet eine neue Verbindung zur PostgreSQL-Datenbank."""
+
     return psycopg2.connect(DATABASE_URL)
 
 
 # =========================================================
-# Datenbank initialisieren
+# Tabellen und Indizes erstellen
 # =========================================================
 
 def init_db():
+    """Erstellt die Tabellen für Rohdaten und Stundenwerte."""
+
     conn = get_db()
 
     try:
         cursor = conn.cursor()
-
-        # -------------------------------------------------
-        # Rohwerte der aktuell laufenden Stunde
-        # -------------------------------------------------
 
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS roh_messungen
             (
                 id BIGSERIAL PRIMARY KEY,
-
                 zeit TIMESTAMPTZ NOT NULL,
-
                 helligkeit DOUBLE PRECISION NOT NULL,
-
                 luftfeucht DOUBLE PRECISION NOT NULL,
-
                 temperatur DOUBLE PRECISION NOT NULL,
-
                 status_tag_nacht BOOLEAN NOT NULL
             )
             """
         )
-
-        # -------------------------------------------------
-        # Berechnete Stundenwerte der letzten 30 Tage
-        # -------------------------------------------------
 
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS stundenwerte
             (
                 stunde TIMESTAMPTZ PRIMARY KEY,
-
                 helligkeit DOUBLE PRECISION NOT NULL,
-
                 luftfeucht DOUBLE PRECISION NOT NULL,
-
                 temperatur DOUBLE PRECISION NOT NULL,
-
                 status_tag_nacht BOOLEAN NOT NULL,
-
                 anzahl_messungen INTEGER NOT NULL
             )
             """
         )
 
-        # Index für schnellere Zeitabfragen
         cursor.execute(
             """
             CREATE INDEX IF NOT EXISTS
@@ -116,19 +102,13 @@ def init_db():
 
 
 # =========================================================
-# Abgeschlossene Stunden berechnen
+# Abgeschlossene Stunden verarbeiten
 # =========================================================
 
 def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
     """
-    Berechnet alle vollständig abgeschlossenen Stunden.
-
-    aktuelle_stunde ist beispielsweise:
-
-        2026-07-13 20:00:00 UTC
-
-    Alle Rohwerte vor dieser Stunde werden gruppiert,
-    als Stundenwerte gespeichert und danach gelöscht.
+    Berechnet Stundenwerte, löscht verarbeitete Rohdaten
+    und behält nur die letzten 30 Tage.
     """
 
     conn = get_db()
@@ -136,16 +116,10 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
     try:
         cursor = conn.cursor()
 
-        # Verhindert, dass zwei gleichzeitige Requests
-        # dieselbe Stunde parallel verarbeiten.
+        # Verhindert eine parallele Berechnung derselben Stunde.
         cursor.execute(
             "SELECT pg_advisory_xact_lock(572934)"
         )
-
-        # -------------------------------------------------
-        # Durchschnittswerte je abgeschlossener Stunde
-        # berechnen und speichern
-        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -160,13 +134,10 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
             )
 
             SELECT
-                DATE_TRUNC('hour', zeit) AS stunde,
-
-                AVG(helligkeit) AS helligkeit,
-
-                AVG(luftfeucht) AS luftfeucht,
-
-                AVG(temperatur) AS temperatur,
+                DATE_TRUNC('hour', zeit),
+                AVG(helligkeit),
+                AVG(luftfeucht),
+                AVG(temperatur),
 
                 (
                     AVG(
@@ -176,9 +147,9 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
                             ELSE 0.0
                         END
                     ) >= 0.5
-                ) AS status_tag_nacht,
+                ),
 
-                COUNT(*) AS anzahl_messungen
+                COUNT(*)
 
             FROM roh_messungen
 
@@ -188,7 +159,6 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
 
             ON CONFLICT (stunde)
             DO UPDATE SET
-
                 helligkeit =
                     EXCLUDED.helligkeit,
 
@@ -207,10 +177,6 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
             (aktuelle_stunde,)
         )
 
-        # -------------------------------------------------
-        # Rohwerte abgeschlossener Stunden löschen
-        # -------------------------------------------------
-
         cursor.execute(
             """
             DELETE FROM roh_messungen
@@ -218,12 +184,6 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
             """,
             (aktuelle_stunde,)
         )
-
-        # -------------------------------------------------
-        # Nur die letzten 30 Tage behalten
-        #
-        # 30 Tage × 24 Stunden = maximal 720 Stundenzeilen
-        # -------------------------------------------------
 
         cursor.execute(
             """
@@ -244,14 +204,11 @@ def abgeschlossene_stunden_verarbeiten(aktuelle_stunde):
 
 
 # =========================================================
-# Eingabedaten prüfen
+# Eingabewerte prüfen
 # =========================================================
 
 def ist_zahl(wert):
-    """
-    True und False gelten in Python ebenfalls als int.
-    Deshalb werden Boolean-Werte hier ausdrücklich abgelehnt.
-    """
+    """Prüft Zahlenwerte und schließt Boolean-Werte aus."""
 
     return (
         isinstance(wert, (int, float))
@@ -260,21 +217,13 @@ def ist_zahl(wert):
 
 
 # =========================================================
-# POST /api/getdata
-#
-# Pico sendet alle 5 Sekunden:
-#
-# {
-#   "zeit": 1783964148,
-#   "helligkeit": 500,
-#   "luftfeucht": 60,
-#   "temperatur": 22.5,
-#   "statusTagNacht": true
-# }
+# Messdaten vom Pico empfangen
 # =========================================================
 
 @app.route("/api/getdata", methods=["POST"])
 def receive_getdata():
+    """Prüft und speichert einen neuen 5-Sekunden-Messwert."""
+
     data = request.get_json(silent=True)
 
     if not isinstance(data, dict):
@@ -308,9 +257,6 @@ def receive_getdata():
     temperatur = data.get("temperatur")
     status_tag_nacht = data.get("statusTagNacht")
 
-    # -----------------------------------------------------
-    # Datentypen prüfen
-    # -----------------------------------------------------
 
     if not ist_zahl(unix_zeit):
         return jsonify({
@@ -337,9 +283,6 @@ def receive_getdata():
             "error": "statusTagNacht muss true oder false sein"
         }), 400
 
-    # -----------------------------------------------------
-    # Unix-Sekunden in UTC-Datum umwandeln
-    # -----------------------------------------------------
 
     try:
         messzeit = datetime.fromtimestamp(
@@ -352,21 +295,20 @@ def receive_getdata():
             "error": "Ungültiger Unix-Zeitstempel"
         }), 400
 
-    # Beginn der Stunde bestimmen
+
     aktuelle_stunde = messzeit.replace(
         minute=0,
         second=0,
         microsecond=0
     )
 
+
     try:
-        # Zuerst eventuell abgeschlossene alte Stunde
-        # berechnen und Rohwerte löschen.
+        # Schließt alte Stunden ab, bevor der neue Wert gespeichert wird.
         abgeschlossene_stunden_verarbeiten(
             aktuelle_stunde
         )
 
-        # Danach neuen 5-Sekunden-Wert speichern.
         conn = get_db()
 
         try:
@@ -395,6 +337,10 @@ def receive_getdata():
 
             conn.commit()
 
+        except Exception:
+            conn.rollback()
+            raise
+
         finally:
             conn.close()
 
@@ -408,6 +354,7 @@ def receive_getdata():
             "error": "Datenbankfehler beim Speichern"
         }), 500
 
+
     return jsonify({
         "status": "ok",
         "zeit": int(messzeit.timestamp())
@@ -415,14 +362,13 @@ def receive_getdata():
 
 
 # =========================================================
-# GET /api/data
-#
-# Liefert alle 5-Sekunden-Werte der aktuell laufenden Stunde.
-# Die Website kann daraus den letzten Live-Wert verwenden.
+# Rohdaten der laufenden Stunde ausgeben
 # =========================================================
 
 @app.route("/api/data", methods=["GET"])
 def get_data():
+    """Liefert alle 5-Sekunden-Werte der laufenden Stunde."""
+
     conn = get_db()
 
     try:
@@ -448,6 +394,7 @@ def get_data():
     finally:
         conn.close()
 
+
     daten = [
         {
             "zeit": int(zeit),
@@ -469,14 +416,13 @@ def get_data():
 
 
 # =========================================================
-# GET /api/stundenwerte
-#
-# Liefert die berechneten Stundenwerte der letzten 30 Tage.
-# Maximal 720 Zeilen.
+# Stundenwerte der letzten 30 Tage ausgeben
 # =========================================================
 
 @app.route("/api/stundenwerte", methods=["GET"])
 def get_stundenwerte():
+    """Liefert die berechneten Stundenwerte für die Graphen."""
+
     conn = get_db()
 
     try:
@@ -503,23 +449,31 @@ def get_stundenwerte():
     finally:
         conn.close()
 
+
     daten = [
         {
             "zeit": int(stunde),
+
             "helligkeit": round(
                 float(helligkeit),
                 2
             ),
+
             "luftfeucht": round(
                 float(luftfeucht),
                 2
             ),
+
             "temperatur": round(
                 float(temperatur),
                 2
             ),
-            "statusTagNacht": status_tag_nacht,
-            "anzahlMessungen": anzahl_messungen
+
+            "statusTagNacht":
+                status_tag_nacht,
+
+            "anzahlMessungen":
+                anzahl_messungen
         }
         for (
             stunde,
@@ -535,13 +489,13 @@ def get_stundenwerte():
 
 
 # =========================================================
-# GET /api/aktuell
-#
-# Liefert nur den zuletzt empfangenen Messwert.
+# Aktuellsten Messwert ausgeben
 # =========================================================
 
 @app.route("/api/aktuell", methods=["GET"])
 def get_aktueller_wert():
+    """Liefert nur den zuletzt empfangenen Messwert."""
+
     conn = get_db()
 
     try:
@@ -569,6 +523,7 @@ def get_aktueller_wert():
     finally:
         conn.close()
 
+
     if row is None:
         return jsonify({
             "zeit": None,
@@ -578,6 +533,7 @@ def get_aktueller_wert():
             "statusTagNacht": None
         }), 200
 
+
     (
         zeit,
         helligkeit,
@@ -585,6 +541,7 @@ def get_aktueller_wert():
         temperatur,
         status_tag_nacht
     ) = row
+
 
     return jsonify({
         "zeit": int(zeit),
@@ -602,20 +559,16 @@ def get_aktueller_wert():
 @app.route("/")
 def home():
     return jsonify({
-        "status": "Backend läuft"
+        "status": "Datenbank-Backend läuft"
     }), 200
 
 
 # =========================================================
-# Datenbank beim Start initialisieren
+# Initialisierung
 # =========================================================
 
 init_db()
 
-
-# =========================================================
-# Lokaler Start
-# =========================================================
 
 if __name__ == "__main__":
     app.run(
